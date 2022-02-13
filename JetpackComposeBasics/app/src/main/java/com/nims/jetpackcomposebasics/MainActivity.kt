@@ -3,9 +3,16 @@ package com.nims.jetpackcomposebasics
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -26,7 +33,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MyApp() {
-    var shouldShowOnboarding by remember { mutableStateOf(true) }
+    /** rememberSaveable:
+     * This will save each state surviving configuration changes (such as rotations) and process death.
+     */
+    var shouldShowOnboarding by rememberSaveable { mutableStateOf(true) }
 
     if (shouldShowOnboarding) {
         OnboardingScreen(onContinueClicked = { shouldShowOnboarding = false })
@@ -36,10 +46,18 @@ private fun MyApp() {
 }
 
 @Composable
-private fun Greetings(names: List<String> = listOf("World", "Compose")) {
+private fun Greetings(names: List<String> = List(1000) { "$it" }) {
     Surface(color = MaterialTheme.colors.background) {
-        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            for (name in names) {
+
+        /** Note: LazyColumn and LazyRow are equivalent to RecyclerView in Android Views.
+         *
+         * LazyColumn doesn't recycle its children like RecyclerView. It emits new Composables as you scroll
+         * through it and is still performant, as emitting Composables is relatively cheap compared to
+         * instantiating Android Views.
+         * */
+
+        LazyColumn(modifier = Modifier.padding(vertical = 4.dp)) {
+            items(items = names) { name ->
                 Greeting(name = name)
             }
         }
@@ -50,26 +68,44 @@ private fun Greetings(names: List<String> = listOf("World", "Compose")) {
 fun Greeting(name: String) {
     // To preserve state across recompositions, remember the mutable state using remember.
     // remember is used to guard against recomposition, so the state is not reset.
-    val expanded = remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(false) }
 
-    val extraPadding = if (expanded.value) 48.dp else 0.dp
+    /** ANIMATION
+     * Any animation created with animate*AsState is interruptible. This means that if the target value changes in the
+     * middle of the animation, animate*AsState restarts the animation and points to the new value.
+     * Interruptions look especially natural with spring-based animations
+     * */
+    val extraPadding by animateDpAsState(
+        targetValue = if (expanded) 48.dp else 0.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow,
+        )
+    )
+
+    val animateColor by animateColorAsState(
+        targetValue = if (expanded) MaterialTheme.colors.secondary else MaterialTheme.colors.primary,
+    )
 
     // A surface container using the 'background' color from the theme
     Surface(
-        color = MaterialTheme.colors.primary,
+        color = animateColor,
         modifier = Modifier.padding(vertical = 4.dp, horizontal = 8.dp)
     ) {
         Row(
-            modifier = Modifier
-                .padding(24.dp)
-                .padding(bottom = extraPadding)
+            modifier = Modifier.padding(24.dp)
         ) {
-            Column(modifier = Modifier.weight(1F)) {
+            Column(
+                modifier = Modifier
+                    .weight(1F)
+                    // ensure padding is never negative to avoid a crash.
+                    .padding(bottom = extraPadding.coerceAtLeast(0.dp))
+            ) {
                 Text(text = "Hello,")
                 Text(text = "$name!")
             }
-            OutlinedButton(onClick = { expanded.value = !expanded.value }) {
-                Text(if (expanded.value) "Show less" else "Show more")
+            OutlinedButton(onClick = { expanded = !expanded }) {
+                Text(if (expanded) "Show less" else "Show more")
             }
         }
     }
